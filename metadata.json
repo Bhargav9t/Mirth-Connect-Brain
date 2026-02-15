@@ -1,0 +1,5 @@
+{
+  "name": "Mirth Connect FHIR Script Generator",
+  "description": "An application to generate a Mirth Connect JavaScript Transformer script to convert prescription text into a FHIR-like JSON object using the Gemini API.",
+  "requestFramePermissions": []
+}
