@@ -1,84 +1,55 @@
 
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 
-const API_KEY = process.env.API_KEY;
+const API_KEY = process.env.GROQ_API_KEY;
 
 if (!API_KEY) {
-  throw new Error("API_KEY environment variable not set");
+  throw new Error("GROQ_API_KEY environment variable not set");
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+const groq = new Groq({ apiKey: API_KEY, dangerouslyAllowBrowser: true });
 
 export const generateMirthScript = async (inputText: string): Promise<string> => {
-  const model = 'gemini-3-pro-preview';
+  const model = 'llama-3.3-70b-versatile';
 
   const prompt = `
-    Act as a Lead Health Integration Architect specializing in Mirth Connect.
+    Context: You are a medical data generator for a Mirth Connect integration.
 
-    Your goal is to write a universal Mirth Connect JavaScript Transformer (Rhino-compatible) that can parse various medical prescription text formats.
+    Task: Generate ${inputText || '10'} unique synthetic prescriptions.
 
-    **REQUIREMENTS FOR THE GENERATED SCRIPT:**
+    Output Requirements (CRITICAL):
 
-    1.  **Input Source**: The script MUST get its input data from Mirth Connect's inbound message using \`var rawData = connectorMessage.getRawData();\`. Do not hardcode the input data.
+    Format: Provide the output as a single minified JSON array. Do not include markdown code blocks (\`\`\`json), preamble, or explanations.
 
-    2.  **Hospital Agnostic**: The script should treat the first non-empty line of \`rawData\` as the hospital name.
+    Structure: Each object must contain: patient_name, dob, medication, dosage, frequency, and icd_10_code.
 
-    3.  **Pattern-Based Extraction (Regex)**: The script must use Regular Expressions to robustly extract information. Create helper functions for this.
-        *   **Patient ID**: Search for lines containing "Patient ID", "ID", or "MRN". Extract the value that follows.
-        *   **Patient Name**: Search for lines containing "Name" or "Patient". Exclude lines that also contain "ID" or "MRN". Extract the value.
-        *   **Diagnosis**: Search for lines containing "Rx" or "Diagnosis". Extract the value.
-        *   **Demographics**: Search for lines containing "Age" and "Sex" or "Demographics". Parse out the age and gender.
+    Validation: Ensure all dates are in YYYY-MM-DD format.
 
-    4.  **Medication Parsing**:
-        *   Identify a "Medications" section or lines that start with "Tab.", "Inj.", or a number/bullet point (e.g., "1.", "* ").
-        *   For each medication line, parse it into \`name\`, \`dosage\`, \`route\`, and \`frequency\`.
-        *   Create a mapping for common frequency shorthands:
-            *   OD -> Once a day
-            *   BD -> Twice a day
-            *   TDS -> Three times a day
-            *   QID -> Four times a day
-            *   HS -> At bedtime
-        *   The final medication list should be an array of objects.
+    Efficiency: Combine all prescriptions into this single response to minimize API calls.
 
-    5.  **Output Structure**:
-        *   Create a single JavaScript object named \`fhirResource\` that is inspired by the FHIR \`MedicationRequest\` resource structure.
-        *   The patient information should be in a \`subject\` block.
-        *   The extracted medications should be in a top-level array property named \`containedMedications\`.
-        *   Include other extracted data like \`requester\` (for the Physician) and \`reasonCode\` (for the Diagnosis).
-
-    6.  **Mirth Connect Integration**:
-        *   The script must be pure JavaScript compatible with Mirth's Rhino engine (use \`var\`, no \`let\`/\`const\`/arrow functions).
-        *   The script MUST conclude with \`channelMap.put('fhirMedicationRequest', JSON.stringify(fhirResource, null, 2));\` to place the final JSON into the channel map.
-
-    **DATA TO USE AS A PARSING EXAMPLE:**
-    Use the following text to guide the logic and regex creation. The final script should be generic enough to handle variations but correct for this specific example.
-    ---
-    ${inputText}
-    ---
-
-    **FINAL DELIVERABLE:**
-    Provide only the complete, ready-to-use JavaScript code block. Do not include any explanations, comments about the code, or markdown formatting like \`\`\`javascript.
+    Error Prevention: If you cannot fulfill a specific field, use "N/A" rather than leaving it null to prevent 404/mapping errors in the Mirth "brain" transformer.
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await groq.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
       model: model,
-      contents: prompt,
     });
-    
-    if (!response.text) {
-        throw new Error("Received an empty response from the API.");
+
+    let script = response.choices[0]?.message?.content || "";
+    if (!script) {
+      throw new Error("Received an empty response from the API.");
     }
-    
+
     // Clean up potential markdown code block fences
-    let script = response.text.trim();
+    script = script.trim();
     if (script.startsWith('```javascript')) {
-        script = script.substring('```javascript'.length);
+      script = script.substring('```javascript'.length);
     } else if (script.startsWith('```')) {
-        script = script.substring(3);
+      script = script.substring(3);
     }
     if (script.endsWith('```')) {
-        script = script.substring(0, script.length - 3);
+      script = script.substring(0, script.length - 3);
     }
 
     return script.trim();
